@@ -23,5 +23,9 @@ classifiers = [
 ]
 
 [tool.setuptools]
-package-dir = {"" = "src"}
+package-dir = { "" = "src" }
 packages = ["zf_rush"]
+
+[project.urls]
+"Homepage" = "https://github.com/FlameFires/zf_rush/"
+"Repository" = "https://github.com/FlameFires/zf_rush/"

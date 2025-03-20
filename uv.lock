@@ -253,27 +253,6 @@ wheels = [
 ]
 
 [[package]]
-name = "rushpy"
-version = "0.1.0"
-source = { editable = "." }
-dependencies = [
-    { name = "fake-useragent" },
-    { name = "httpx", extra = ["http2"] },
-    { name = "loguru" },
-    { name = "openpyxl" },
-    { name = "pandas" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "fake-useragent", specifier = ">=2.1.0" },
-    { name = "httpx", extras = ["http2"], specifier = ">=0.28.1" },
-    { name = "loguru", specifier = ">=0.7.3" },
-    { name = "openpyxl", specifier = ">=3.1.5" },
-    { name = "pandas", specifier = ">=2.2.3" },
-]
-
-[[package]]
 name = "six"
 version = "1.17.0"
 source = { registry = "https://pypi.org/simple" }
@@ -316,4 +295,25 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/b3/8f/705086c9d734d3b663af0e9bb3d4de6578d08f46b1b101c2442fd9aecaa2/win32_setctime-1.2.0.tar.gz", hash = "sha256:ae1fdf948f5640aae05c511ade119313fb6a30d7eabe25fef9764dca5873c4c0", size = 4867 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/e1/07/c6fe3ad3e685340704d314d765b7912993bcb8dc198f0e7a89382d37974b/win32_setctime-1.2.0-py3-none-any.whl", hash = "sha256:95d644c4e708aba81dc3704a116d8cbc974d70b3bdb8be1d150e36be6e9d1390", size = 4083 },
+]
+
+[[package]]
+name = "zf-rush"
+version = "0.1.1"
+source = { editable = "." }
+dependencies = [
+    { name = "fake-useragent" },
+    { name = "httpx", extra = ["http2"] },
+    { name = "loguru" },
+    { name = "openpyxl" },
+    { name = "pandas" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "fake-useragent", specifier = ">=2.1.0" },
+    { name = "httpx", extras = ["http2"], specifier = ">=0.28.1" },
+    { name = "loguru", specifier = ">=0.7.3" },
+    { name = "openpyxl", specifier = ">=3.1.5" },
+    { name = "pandas", specifier = ">=2.2.3" },
 ]
