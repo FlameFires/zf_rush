@@ -55,9 +55,9 @@ config = MyConfig()
 ### 自定义客户端
 
 ```python
-from zf_rush import RushClient
+from zf_rush import BaseApiClient
 
-class MyClient(RushClient):
+class MyClient(BaseApiClient):
     async def perform_action(self, action: str, *args, **kwargs):
         if action == "custom":
             return await self._custom_method()

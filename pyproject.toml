@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "zf_rush"
-version = "0.1.1"
+version = "0.1.2"
 description = "High-level async API client and scheduler framework"
 authors = [{ name = "zerofire", email = "fire2019@qq.com" }]
 readme = "README.md"
@@ -13,9 +13,8 @@ dependencies = [
     "fake-useragent>=2.1.0",
     "httpx[http2]>=0.28.1",
     "loguru>=0.7.3",
-    "openpyxl>=3.1.5",
-    "pandas>=2.2.3",
 ]
+keywords = ["async", "api", "scheduler", "framework", "rusher", "high-level"]
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: MIT License",
