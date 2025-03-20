@@ -1,40 +1,48 @@
 # zf_rush - 高性能异步 API 客户端框架
 
-## 特性
+## 核心特性
 
--   🚀 异步并发请求支持
--   🔄 自动重试机制
--   🕶️ 代理池支持
--   🔒 签名验证系统
--   📦 易扩展架构
+-   ✨ **全异步架构**：基于 asyncio 和 httpx 实现高并发请求
+-   🔄 **智能重试**：支持配置化重试策略（最大重试次数、延迟策略）
+-   🌐 **代理池系统**：动态代理管理，支持多平台代理自动切换
+-   🔒 **安全增强**：内置签名验证系统，支持自定义加密策略
+-   📦 **模块化设计**：可插拔组件架构，轻松扩展功能模块
 
 ## 快速开始
 
 ```bash
 pip install zf_rush
 ```
+或者使用 uv
+```bash
+uv add zf_rush
+```
 
 ## 基础用法
 
 ```python
-from zf_rush import AppConfig, CacheData, Scheduler, RushClient
+import asyncio
+from zf_rush import AppConfig, CacheData, BaseScheduler, BaseApiClient
 
 # 配置初始化
 config = AppConfig(
-    concurrency=10,
-    max_requests=1000,
-    request_delay=0.3
+    concurrency=10,           # 初始并发数
+    max_requests=1000,        # 最大请求总量
+    request_delay=0.3,        # 请求间隔（秒）
+    max_concurrent_requests=0 # 0表示不限制并发（根据系统资源自动调整）
 )
 
-cache = CacheData(enabled=False)  # 禁用缓存
+# 禁用缓存系统
+cache = CacheData(enabled=False)
 
 # 创建调度器
-scheduler = Scheduler(
-    app_config=config,
-    cache_data=cache
-)
+class MyScheduler(BaseScheduler):
+    async def worker(self, task_id: int):
+        # 实现具体任务逻辑
+        pass
 
 # 启动任务
+scheduler = MyScheduler(app_config=config, cache_data=cache)
 asyncio.run(scheduler.start())
 ```
 
@@ -43,13 +51,31 @@ asyncio.run(scheduler.start())
 ### 扩展配置
 
 ```python
-from zf_rush import AppConfig
+from zf_rush import AppConfig, ProxyPlatformConfig, ProxyConfig
 
-class MyConfig(AppConfig):
-    api_endpoint: str = "https://api.example.com"
-    custom_timeout: int = 30
+proxy_platforms = [
+    ProxyPlatformConfig(
+        name="debug_proxy",
+        value="http://127.0.0.1:7890",
+        priority=1
+    ),
+    ProxyPlatformConfig(
+        name="prod_proxy",
+        get_proxy_link="https://api.proxy.com/get?token=xxx",
+        priority=2
+    )
+]
 
-config = MyConfig()
+proxy_config = ProxyConfig(
+    enable=True,
+    use="prod_proxy",
+    proxy_platforms=proxy_platforms
+)
+
+config = AppConfig(
+    proxy_config=proxy_config,
+    max_concurrent_requests=50 # 设置并发上限
+)
 ```
 
 ### 自定义客户端
@@ -57,37 +83,85 @@ config = MyConfig()
 ```python
 from zf_rush import BaseApiClient
 
-class MyClient(BaseApiClient):
-    async def perform_action(self, action: str, *args, **kwargs):
-        if action == "custom":
-            return await self._custom_method()
-        return await super().perform_action(action, *args, **kwargs)
+class MyApiClient(BaseApiClient):
+    async def custom_request(self, method: str, url: str, **kwargs):
+        # 添加自定义请求逻辑
+        return await self._request(method, url, **kwargs)
 
-    async def _custom_method(self):
-        # 自定义实现
-        pass
+    async def _process_response(self, response):
+        # 自定义响应处理
+        return await super()._process_response(response)
 ```
 
-## 贡献
+## 架构说明
 
-欢迎提交 PR 和 Issue
+### 核心组件
 
-1. **模块化设计**：
+1. 代理池系统
 
--   独立代理模块
--   分离工具函数
--   明确的模块职责划分
+-   动态代理管理队列
+-   多平台代理自动切换
+-   失效代理自动移除机制
+-   智能冷却时间控制
 
-2. **可扩展性**：
+2. 调度系统
 
--   基于继承的配置扩展
--   可插拔的缓存系统
--   开放的客户端/调度器接口
+-   精确的并发控制（支持无限制模式）
+-   任务执行时间预设（execute_datetime）
+-   请求频率自动调节
 
-3. **易用性**：
+3. 安全机制
 
--   类型提示完善
--   灵活的配置选项
--   详细的文档示例
+-   可配置的请求签名系统
+-   自动 User-Agent 生成
+-   请求指纹识别防护
 
-是否需要针对某个具体模块的实现进行详细说明？或者需要补充其他功能的实现细节？
+4. 扩展能力
+
+-   可自定义代理平台接入
+-   支持中间件扩展
+-   钩子函数系统（请求前后处理）
+
+### 性能优化建议
+
+-   设置合理的 request_delay（0.1-0.5 秒最佳实践）
+-   根据目标服务器性能调整 max_concurrent_requests
+-   生产环境建议启用代理池（配置多个备用代理）
+-   使用 fake_headers_enabled 伪装请求头特征
+
+## 贡献指南
+
+我们欢迎任何形式的贡献！以下是主要开发方向：
+
+1. **代理模块** ：
+
+-   实现新的代理平台适配器
+-   优化代理有效性检测算法
+-   开发代理性能评分系统
+
+2. **核心功能** ：
+
+-   增加请求指纹混淆功能
+-   实现动态速率限制算法
+-   开发自动重试策略插件
+
+3. **工具增强** ：
+
+-   添加 Prometheus 监控指标
+-   实现请求链路追踪
+-   开发可视化调试面板
+-   欢迎提交 PR 和 Issue
+
+## 需要帮助完善文档？想实现某个新特性？欢迎提交 Issue 或 PR！
+
+主要改进点说明：
+
+1. 强化了代理配置的示例和说明
+2. 新增架构说明部分，明确系统设计
+3. 增加性能优化建议章节
+4. 更新示例代码以匹配最新的配置参数
+5. 补充安全机制说明
+6. 增加可扩展性相关的开发指南
+7. 突出异步特性和并发控制机制
+8. 明确代理池的工作机制和配置方式
+9. 添加实际应用场景的最佳实践建议

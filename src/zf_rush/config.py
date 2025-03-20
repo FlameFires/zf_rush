@@ -22,16 +22,41 @@ class BaseConfig(ABC):
 
 
 class ProxyPlatformConfig(TypedDict):
+    """代理平台配置字典类型
+
+    Attributes:
+        name (str): 代理平台标识符（英文名称）
+        value (Optional[str]): 代理服务器地址（格式：协议://地址:端口）
+        get_proxy_link (Optional[str]): 获取代理API的URL模板
+        home_page (Optional[str]): 代理平台官网地址
+        zh_name (Optional[str]): 代理平台中文名称
+        priority (int): 代理优先级（数值越大优先级越高）
+        queue_max_size (Optional[int]): 代理池最大容量，默认2
+    """
+
     name: str
     value: Optional[str]
     get_proxy_link: Optional[str]
     home_page: Optional[str]
     zh_name: Optional[str]
     priority: int
+    queue_max_size: Optional[int]
 
 
 @dataclass
 class ProxyConfig:
+    """代理配置容器
+
+    Attributes:
+        enable (bool): 是否启用代理功能
+        use (Literal["debug_proxy", "yi_dai_li"]): 当前使用的代理平台标识符
+        proxy_platforms (List[ProxyPlatformConfig]): 可用代理平台配置列表
+
+    说明:
+        1. "use"字段必须与proxy_platforms中某个配置的name字段匹配
+        2. 当enable=False时，所有代理相关配置将被忽略
+    """
+
     enable: bool
     use: Literal["debug_proxy", "yi_dai_li"]
     proxy_platforms: list[ProxyPlatformConfig]
@@ -39,10 +64,33 @@ class ProxyConfig:
 
 @dataclass
 class AppConfig(BaseConfig):
+    """应用程序核心配置类
+
+    Args:
+        execute_datetime (Optional[str]): 任务执行时间（格式：YYYY-MM-DD HH:MM:SS）
+        concurrency (int): 初始并发任务数，默认1
+        max_requests (int): 最大请求总数限制，默认10
+        max_retries (int): 单个请求最大重试次数，默认3
+        max_concurrent_requests (Optional[int]): 最大并发请求数，<=0时表示不限制，默认10
+        request_delay (float): 请求间隔时间（秒），默认0.5
+        request_timeout (float): 单个请求超时时间（秒），默认10
+        fake_headers_enabled (bool): 是否启用伪造请求头，默认True
+
+    Attributes:
+        proxy_config (ProxyConfig): 代理相关配置容器
+        _extra (dict): 保留字段，用于存储未被显式定义的配置项
+
+    说明:
+        1. max_concurrent_requests为0或负数时，使用系统最大并发能力
+        2. proxy_config默认配置包含本地调试代理（http://127.0.0.1:7890）
+        3. 所有时间相关配置需使用浮点数表示秒数
+    """
+
     execute_datetime: Optional[str] = None
     concurrency: int = 1
     max_requests: int = 10
     max_retries: int = 3
+    max_concurrent_requests: Optional[int] = 10
     request_delay: float = 0.5
     request_timeout: float = 10
     fake_headers_enabled: bool = True

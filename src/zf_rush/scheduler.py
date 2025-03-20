@@ -16,17 +16,45 @@ T = TypeVar("T", bound=BaseApiClient)  # 限定为 BaseApiClient 或其子类
 
 
 class BaseScheduler(ABC):
+    """异步任务调度器抽象基类，提供并发控制基础功能
+
+    Args:
+        app_config (AppConfig): 应用配置对象
+        max_concurrent_requests (int, optional): 最大并发请求数，<=0时表示不限制。默认为10
+
+    Attributes:
+        app_config (AppConfig): 应用配置对象
+        max_concurrent_requests (int): 实际使用的并发上限值（sys.maxsize表示无限制）
+        _request_counter (int): 当前活跃请求计数器
+        _counter_lock (asyncio.Lock): 计数器操作锁
+        _semaphore (asyncio.Semaphore): 并发控制信号量
+
+    说明:
+        1. 使用信号量机制控制最大并发请求数
+        2. 通过原子计数器实现精确的并发量统计
+        3. 当max_concurrent_requests <=0 时，使用系统最大值(sys.maxsize)实现无限制并发
+
+    """
+
     def __init__(
         self,
         app_config: "AppConfig",
-        max_concurrent_requests: int = 10,
     ):
         self.app_config = app_config
-        # concurrency settings
-        self.max_concurrent_requests = max_concurrent_requests
+
+        # 确定最终的并发限制值
+        config_max = getattr(app_config, "max_concurrent_requests", None)
+
+        # 优先使用配置文件中的有效值，其次使用传入参数，最后设置无限制
+        final_max = sys.maxsize
+        if config_max is not None and config_max > 0:
+            final_max = config_max
+
+        self.max_concurrent_requests = final_max
+        self._semaphore = asyncio.Semaphore(final_max)
+
         self._request_counter = 0
         self._counter_lock = asyncio.Lock()
-        self._semaphore = asyncio.Semaphore(max_concurrent_requests)
 
     async def start(self):
         """主调度入口"""

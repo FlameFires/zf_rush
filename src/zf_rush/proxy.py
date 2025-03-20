@@ -42,22 +42,52 @@ class RemoteProxyProvider(ProxyProvider):
 
 
 class ProxyPool:
+    """代理池管理器，负责代理的获取、验证和分发
+
+    Args:
+        app_config (AppConfig): 应用配置对象，包含代理相关配置
+
+    Attributes:
+        app_config (AppConfig): 应用配置对象
+        providers (list[ProxyProvider]): 代理提供者实例列表
+        lock (asyncio.Lock): 异步操作锁，确保线程安全
+        proxy_queue (asyncio.Queue): 代理IP存储队列
+        _stop_event (asyncio.Event): 停止信号事件
+        _cooldown_time (float): 基础冷却时间（秒）
+        _full_queue_cooldown (float): 队列满时的扩展冷却时间（秒）
+        invalid_proxy_count (int): 无效代理计数器
+        _preload_task (Optional[asyncio.Task]): 预加载任务句柄
+
+    说明:
+        1. 采用异步队列实现代理IP的动态管理
+        2. 队列最大容量通过配置参数queue_max_size控制（最小为2）
+        3. 冷却时间机制防止代理获取过于频繁导致的封禁
+        4. 支持动态加载不同类型的代理提供者
+    """
+
     def __init__(self, app_config: AppConfig):
         # 应用配置
         self.app_config = app_config
+
         # 代理提供者
-        self.providers: list[ProxyProvider] = []
+        self.providers: list[ProxyProvider] = []  # 存储不同平台的代理获取器
+
         # 代理队列
-        self.lock = asyncio.Lock()
-        self.proxy_queue: asyncio.Queue = asyncio.Queue(maxsize=1)
-        self._stop_event = asyncio.Event()  # 新增停止信号
-        self._cooldown_time = 0.5  # 基础冷却时间
-        self._full_queue_cooldown = 5  # 队列满时的冷却时间
-        self.invalid_proxy_count = 0
+        self.lock = asyncio.Lock()  # 保证多协程操作安全
+        queue_max_size = getattr(app_config, "queue_max_size", 2)
+        if queue_max_size < 1:
+            queue_max_size = 2  # 强制最小队列容量为2
+        self.proxy_queue: asyncio.Queue = asyncio.Queue(maxsize=queue_max_size)
+        self._stop_event = asyncio.Event()  # 用于优雅停止操作
+        self._cooldown_time = 0.5  # 基础冷却时间（代理获取失败时使用）
+        self._full_queue_cooldown = 5  # 队列满时的等待时间
+        self.invalid_proxy_count = 0  # 统计连续无效代理次数
+
         # 预加载任务
-        self._preload_task = None
+        self._preload_task = None  # 异步预加载任务引用
+
         # 初始化代理提供者
-        self._init_providers()
+        self._init_providers()  # 根据配置加载对应平台的代理提供者
 
     def _init_providers(self):
         """根据配置初始化代理提供者"""

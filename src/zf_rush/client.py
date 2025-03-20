@@ -12,6 +12,22 @@ from .proxy import ProxyPool
 
 
 class BaseApiClient(ABC):
+    """基础API客户端抽象基类，提供通用初始化逻辑
+
+    Args:
+        app_config (AppConfig): 应用配置对象，包含必要的配置参数
+        proxy_pool (Optional[ProxyPool], optional): 代理池对象，用于管理网络请求代理。默认为None
+        *args: 可变位置参数，供子类扩展使用
+        cookies (dict, str, optional): 会话Cookie信息，处理请求时会从此处提取。默认为None
+        **kwargs: 可变关键字参数，供子类扩展使用
+
+    说明:
+        1. 所有API客户端实现都应继承自该基类
+        2. proxy_pool为可选依赖，当需要使用代理时传入
+        3. cookies参数会被自动注入到请求会话中，用于维持用户认证状态
+        4. 其他args/kwargs参数可由子类自行定义和处理
+    """
+
     def __init__(
         self,
         app_config: AppConfig,
@@ -21,9 +37,6 @@ class BaseApiClient(ABC):
     ):
         # 应用配置
         self.app_config = app_config
-
-        # 缓存数据
-        # self.cache_data = cache_data
 
         # 代理配置
         self.proxy: Optional[str] = None
@@ -50,7 +63,6 @@ class BaseApiClient(ABC):
 
         # 日志消息
         self.execute_message = ""
-        self.sign_message = ""
 
         # 其他数据
         self.args = args
@@ -88,6 +100,17 @@ class BaseApiClient(ABC):
         return default_cookies
 
     async def _create_http_client(self) -> httpx.AsyncClient:
+        """创建并配置异步HTTP客户端
+
+        处理逻辑:
+            1. 从代理池获取可用代理（如果已配置）
+            2. 从kwargs中提取并预处理cookies
+            3. 创建带配置的HTTP客户端实例
+
+        Returns:
+            httpx.AsyncClient: 配置好的异步HTTP客户端
+        """
+
         if self.proxy_pool:
             proxy = await self.proxy_pool.get_next_proxy()
             if proxy:
