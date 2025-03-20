@@ -17,8 +17,8 @@ class ProxyProvider(ABC):
 
 
 class DebugProxyProvider(ProxyProvider):
-    def __init__(self, proxy: str):
-        self.proxy = proxy
+    def __init__(self, platform_config: ProxyPlatformConfig):
+        self.proxy = platform_config.get("value")
 
     async def get_proxy(self) -> Optional[str]:
         return self.proxy
@@ -27,14 +27,17 @@ class DebugProxyProvider(ProxyProvider):
 class RemoteProxyProvider(ProxyProvider):
     def __init__(self, platform_config: ProxyPlatformConfig):
         self.config = platform_config
+        self.get_proxy_link = platform_config.get("get_proxy_link", None)
 
     async def get_proxy(self) -> Optional[str]:
+        if not self.get_proxy_link:
+            return None
         try:
             async with httpx.AsyncClient() as client:
-                resp = await client.get(self.config.get_proxy_link, timeout=5)
+                resp = await client.get(self.get_proxy_link, timeout=5)
                 return f"http://{resp.text.strip()}"
         except Exception as e:
-            logger.error(f"获取{self.config.zh_name}代理失败: {e}")
+            logger.error(f"获取{self.config.get('name')}代理失败: {e}")
             return None
 
 
@@ -62,16 +65,15 @@ class ProxyPool:
         if not proxy_conf["enable"]:
             return
 
-        # 创建调试代理提供者（如果需要）
-        if debug and debug_proxy:
-            self.providers.append(DebugProxyProvider(debug_proxy))
-            self._start_preload()
-            return
-
         # 根据配置创建代理提供者
         if proxy_conf["use"] == "debug_proxy":
-            if debug_proxy:
-                self.providers.append(DebugProxyProvider(debug_proxy))
+            platforms = [
+                p
+                for p in proxy_conf["proxy_platforms"]
+                if p["name"] == proxy_conf["use"]
+            ]
+            if platforms:
+                self.providers.append(DebugProxyProvider(platforms[0]))
         else:
             # 过滤并排序代理平台
             platforms = [
@@ -79,7 +81,7 @@ class ProxyPool:
                 for p in proxy_conf["proxy_platforms"]
                 if p["name"] == proxy_conf["use"]
             ]
-            platforms.sort(key=lambda x: x.get("priority", 1))
+            platforms.sort(key=lambda x: x.get("priority", 200))
 
             for platform in platforms:
                 self.providers.append(

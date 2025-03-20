@@ -1,11 +1,12 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, asdict, field
-from typing import Type, TypeVar, Optional
+from typing import Type, TypeVar, Optional, Literal
+from typing_extensions import TypedDict
 from datetime import datetime
 import os
 import json
 
-T = TypeVar("T", bound="BaseConfig")  # 假设所有配置类都继承自BaseConfig
+T = TypeVar("T", bound="BaseConfig")  # 所有配置类都继承自BaseConfig
 
 
 class BaseConfig(ABC):
@@ -20,13 +21,20 @@ class BaseConfig(ABC):
         raise NotImplementedError
 
 
-@dataclass
-class ProxyPlatformConfig:
+class ProxyPlatformConfig(TypedDict):
     name: str
-    get_proxy_link: str
-    home_page: str
-    zh_name: str
-    priority: int = 1
+    value: Optional[str]
+    get_proxy_link: Optional[str]
+    home_page: Optional[str]
+    zh_name: Optional[str]
+    priority: int
+
+
+@dataclass
+class ProxyConfig:
+    enable: bool
+    use: Literal["debug_proxy", "yi_dai_li"]
+    proxy_platforms: list[ProxyPlatformConfig]
 
 
 @dataclass
@@ -40,11 +48,13 @@ class AppConfig(BaseConfig):
     fake_headers_enabled: bool = True
 
     # 新增代理配置结构
-    proxy_config: dict = field(
+    proxy_config: ProxyConfig = field(
         default_factory=lambda: {
             "enable": True,
             "use": "debug_proxy",
-            "proxy_platforms": [],
+            "proxy_platforms": [
+                {"name": "debug_proxy", "value": "http://127.0.0.1:7890", "priority": 1}
+            ],
         }
     )
 
@@ -117,10 +127,43 @@ class AppConfig(BaseConfig):
 
 class ConfigManager:
     @staticmethod
-    def save(config: BaseConfig, file_path: str) -> None:
-        """保存配置到JSON文件"""
-        with open(file_path, "w") as f:
-            json.dump(config.to_dict(), f, indent=2)
+    def save(config: BaseConfig, file_path: str) -> bool:
+        """
+        保存配置到JSON文件，自动创建目录并处理异常
+
+        Args:
+            config: 配置对象
+            file_path: 文件保存路径
+
+        Returns:
+            bool: 保存是否成功
+        """
+
+        # 确保目录存在
+        directory = os.path.dirname(file_path)
+        if directory:  # 处理文件在根目录的情况（如file_path为"config.json"）
+            try:
+                os.makedirs(directory, exist_ok=True)
+            except OSError as e:
+                print(f"无法创建目录 {directory}: {e}")
+                return False
+
+        try:
+            # 显式指定文件对象类型为 SupportsWrite[str]
+            with open(file_path, "w", encoding="utf-8") as f:
+                json.dump(
+                    config.to_dict(),
+                    f,  # type: ignore[arg-type]
+                    indent=2,
+                    ensure_ascii=False,
+                )
+            return True
+        except IOError as e:
+            print(f"文件写入失败 {file_path}: {e}")
+        except Exception as e:
+            print(f"保存配置时发生未知错误: {e}")
+
+        return False
 
     @staticmethod
     def load(file_path: str, config_class: Type[T]) -> T:

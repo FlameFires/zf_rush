@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Optional, Any
+from typing import Optional, Any, Union
 import random
 import ssl
 
@@ -16,6 +16,8 @@ class BaseApiClient(ABC):
         self,
         app_config: AppConfig,
         proxy_pool: Optional[ProxyPool] = None,
+        *args,
+        **kwargs,
     ):
         # 应用配置
         self.app_config = app_config
@@ -50,6 +52,10 @@ class BaseApiClient(ABC):
         self.execute_message = ""
         self.sign_message = ""
 
+        # 其他数据
+        self.args = args
+        self.kwargs = kwargs
+
     async def __aenter__(self):
         self._async_client = await self._create_http_client()
         return self
@@ -65,11 +71,34 @@ class BaseApiClient(ABC):
         ctx.set_ciphers("ALL")
         return ctx
 
+    def process_cookies(self, cookies: Union[str, dict]) -> dict:
+        default_cookies = {}
+        if isinstance(cookies, str):
+            # 解析字符串并合并到默认值
+            cookie_dict = {}
+            for pair in cookies.split(";"):
+                key, value = pair.strip().split("=", 1)
+                cookie_dict[key] = value
+            default_cookies.update(cookie_dict)
+            return default_cookies
+        elif isinstance(cookies, dict):
+            # 合并字典到默认值
+            default_cookies.update(cookies)
+            return default_cookies
+        return default_cookies
+
     async def _create_http_client(self) -> httpx.AsyncClient:
         if self.proxy_pool:
-            self.current_proxy = await self.proxy_pool.get_next_proxy()
+            proxy = await self.proxy_pool.get_next_proxy()
+            if proxy:
+                self.current_proxy = proxy
+
+        # 处理 cookies
+        cookies = self.kwargs.get("cookies")
+        processed_cookies = self.process_cookies(cookies) if cookies else None
+
         return httpx.AsyncClient(
-            cookies=self.cache_data.cookies,
+            cookies=processed_cookies,
             timeout=self.app_config.request_timeout,
             http2=True,
             verify=self._ssl_context,

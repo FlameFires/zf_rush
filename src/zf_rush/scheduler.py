@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import Any, TypeVar
 import traceback
 import time
 import json
@@ -9,8 +9,10 @@ import asyncio
 
 from loguru import logger
 
-from .client import RushClient
+from .client import BaseApiClient
 from .config import AppConfig
+
+T = TypeVar("T", bound=BaseApiClient)  # 限定为 BaseApiClient 或其子类
 
 
 class BaseScheduler(ABC):
@@ -60,7 +62,7 @@ class BaseScheduler(ABC):
         """需要子类实现的工作协程"""
         pass
 
-    async def execute_operation(self, task_id: int, client: "RushClient") -> Any:
+    async def execute_operation(self, task_id: int, client: T) -> Any:
         """执行核心操作的模板方法"""
         async with self._counter_lock:
             if self._request_counter >= self.app_config.max_requests:
@@ -88,7 +90,7 @@ class BaseScheduler(ABC):
             await asyncio.sleep(self.app_config.request_delay)
 
     @abstractmethod
-    async def perform_action(self, client: "RushClient") -> Any:
+    async def perform_action(self, client: T) -> Any:
         """执行具体业务操作的抽象方法"""
         pass
 
