@@ -178,17 +178,19 @@ class BaseScheduler(ABC):
     def construct_success_log(
         self, task_id: int, current_request: int, elapsed: float, result: str
     ) -> str:
-        return (
+        log_msg = (
             f"Task-{task_id:02d} | Request-{current_request:03d} | "
             f"Elapsed: {elapsed:.2f}s | "
             f"Response: {result}"
         )
+        return f"✅ {log_msg}"
 
     def construct_failure_log(
         self, task_id: int, current_request: int, elapsed: float, error: str
     ) -> str:
-        return (
+        log_msg = (
             f"Task-{task_id:02d} | Request-{current_request:03d} | "
             f"Elapsed: {elapsed:.2f}s | "
             f"Error: {error}"
         )
+        return f"❌ {log_msg}"
