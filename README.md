@@ -32,10 +32,10 @@ uv add zf_rush
 ```python
 import asyncio
 from loguru import logger
-from zf_rush.async_decorators import concurrent, http_client
-from zf_rush.client import HttpClient
-from zf_rush.config import ConnectionConfig, RetryStrategy
-from zf_rush.proxy import DebugProxyProvider
+from zf_rush import concurrent, http_client
+from zf_rush import HttpClient
+from zf_rush import ConnectionConfig, RetryStrategy
+from zf_rush import DebugProxyProvider
 
 # 配置连接和重试策略
 connection_config = ConnectionConfig(timeout=15.0, http2=True)
@@ -98,7 +98,7 @@ logger.add(
 ### 高级用法：多重装饰器组合
 
 ```python
-from zf_rush.async_decorators import concurrent, scheduled, delayed
+from zf_rush import concurrent, scheduled, delayed
 from datetime import datetime
 
 # 组合多个装饰器实现复杂功能
@@ -139,7 +139,7 @@ async def configured_task(task_id: int, request_num: int):
 ### 代理配置示例
 
 ```python
-from zf_rush.proxy import DebugProxyProvider, RotatingProxyProvider, YiProxyProvider
+from zf_rush import DebugProxyProvider, RotatingProxyProvider, YiProxyProvider
 
 # 调试代理
 debug_proxy = DebugProxyProvider("http://debug-proxy:8080/")
@@ -188,16 +188,17 @@ yi_proxy = YiProxyProvider(
 ## 最佳实践
 
 1. **错误处理**
+
    - 使用 try-except 捕获具体异常
    - 实现合理的重试策略
    - 记录详细的错误日志
-
 2. **性能优化**
+
    - 合理设置并发数和请求延迟
    - 使用 HTTP/2 提升性能
    - 启用代理池分散请求压力
-
 3. **日志管理**
+
    - 配置合适的日志级别
    - 启用日志轮换和压缩
    - 记录关键性能指标
