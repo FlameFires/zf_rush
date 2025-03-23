@@ -1,10 +1,28 @@
-# 基础配置类
+"""
+提供配置类，用于管理应用程序的各种设置。
+
+包含以下配置类：
+- AppConfig: 应用程序全局配置
+- ConnectionConfig: HTTP连接相关配置
+- RetryStrategy: 请求重试策略配置
+"""
+
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, FrozenSet
 
 
 @dataclass
 class AppConfig:
+    """
+    应用程序全局配置类。
+
+    属性:
+        execute_time (Optional[str]): 计划执行时间，格式：YYYY-MM-DD HH:MM:SS
+        concurrency (int): 最大并发请求数
+        max_requests (int): 最大请求总数
+        request_delay (float): 请求间隔时间（秒）
+        retry_attempts (int): 失败重试次数
+    """
     execute_time: Optional[str] = None  # 格式：YYYY-MM-DD HH:MM:SS
     concurrency: int = 1
     max_requests: int = 100

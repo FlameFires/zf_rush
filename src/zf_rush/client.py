@@ -1,11 +1,41 @@
+"""
+提供异步HTTP客户端功能，支持代理轮换、自动重试和请求头伪造等特性。
+
+该模块的主要功能：
+1. 异步HTTP请求处理
+2. 智能代理管理和轮换
+3. 自动重试机制
+4. 请求头伪造
+5. SSL上下文管理
+"""
+
 import asyncio
 import random
 import ssl
-from typing import Optional
+from typing import Optional, Any, Dict, Tuple, Union
 
-from fake_useragent import FakeUserAgent, UserAgent
-import httpx
-from loguru import logger
+# 第三方库导入，使用try-except处理可能的导入错误
+try:
+    from fake_useragent import FakeUserAgent, UserAgent
+except ImportError:
+    from warnings import warn
+    warn("fake-useragent not installed. Some features will be limited.")
+    class UserAgent:
+        def __init__(self): pass
+        @property
+        def random(self): return "Mozilla/5.0"
+    FakeUserAgent = UserAgent
+
+try:
+    import httpx
+except ImportError:
+    raise ImportError("httpx is required. Please install it with 'pip install httpx'")
+
+try:
+    from loguru import logger
+except ImportError:
+    import logging
+    logger = logging.getLogger(__name__)
 
 from zf_rush.config import ConnectionConfig, RetryStrategy
 from zf_rush.proxy import EmptyProxyProvider, ProxyProvider
@@ -128,7 +158,6 @@ class HttpClient:
             str: 一个随机的公网IPv4地址。
 
         """
-        """生成更真实的公网IPv4地址"""
         while True:
             # 生成第一个八位组（1-254）
             octet1 = random.randint(1, 254)

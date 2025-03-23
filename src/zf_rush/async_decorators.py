@@ -1,11 +1,24 @@
-# 1. 定时执行装饰器
+"""
+提供了一系列异步装饰器，用于增强HTTP请求的功能。
+
+包含以下装饰器：
+- scheduled: 定时执行装饰器，用于在指定时间执行异步函数
+- concurrent: 并发控制装饰器，用于限制并发请求数量
+- delayed: 请求间隔装饰器，用于控制请求之间的延迟时间
+- http_client: HTTP客户端装饰器，用于配置和管理HTTP客户端
+"""
+
 import asyncio
 from datetime import datetime
 from functools import wraps
 import traceback
-from typing import Callable, Optional
+from typing import Callable, Optional, Type, Union
 
-from loguru import logger
+try:
+    from loguru import logger
+except ImportError:
+    import logging
+    logger = logging.getLogger(__name__)
 
 from zf_rush.client import HttpClient
 from zf_rush.config import ConnectionConfig, RetryStrategy
@@ -108,7 +121,7 @@ def concurrent(max_concurrent: int, max_requests: int):
                                     *args,
                                     **kwargs,
                                 )
-                            except Exception as e:
+                            except (IOError, ValueError, TimeoutError) as e:
                                 # 获取完整的错误追踪信息
                                 tb_list = traceback.extract_tb(e.__traceback__)
                                 # 取最后一个追踪帧（即异常发生的具体位置）
@@ -198,7 +211,7 @@ def http_client(
                 client.proxy_provider = (
                     proxy_provider if proxy_provider else EmptyProxyProvider()
                 )
-                await client._create_client()
+                await client.initialize()
                 return await func(*args, **kwargs)
 
             # 使用默认配置防止None

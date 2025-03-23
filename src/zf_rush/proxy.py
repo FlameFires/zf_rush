@@ -1,6 +1,21 @@
+"""
+提供代理服务器管理功能，支持多种代理提供方式。
+
+包含以下代理提供者实现：
+- ProxyProvider: 抽象基类，定义代理提供者接口
+- EmptyProxyProvider: 空代理实现，不使用代理
+- DebugProxyProvider: 调试代理实现，使用固定代理
+- RotatingProxyProvider: 轮换代理实现，从代理列表中轮换使用
+- YiProxyProvider: 易代理实现，从易代理API获取代理
+"""
+
 from abc import ABC, abstractmethod
-from typing import Optional
-import httpx
+from typing import Optional, Tuple, List, Any
+
+try:
+    import httpx
+except ImportError:
+    raise ImportError("httpx is required. Please install it with 'pip install httpx'")
 
 
 # 代理接口
@@ -8,20 +23,46 @@ class ProxyProvider(ABC):
     """代理提供者接口"""
 
     @abstractmethod
-    async def get_proxy(self) -> tuple[Optional[str], Optional[Exception]]:
+    async def get_proxy(self) -> Tuple[Optional[str], Optional[Exception]]:
+        """
+        获取代理服务器地址。
+
+        Returns:
+            Tuple[Optional[str], Optional[Exception]]: 返回一个元组，包含代理地址和可能的异常。
+            如果获取代理成功，第一个元素为代理地址，第二个元素为None。
+            如果获取代理失败，第一个元素为None，第二个元素为异常对象。
+        """
         pass
 
     @abstractmethod
     async def invalidate_proxy(self, proxy: str) -> None:
+        """
+        标记代理为无效。
+
+        Args:
+            proxy (str): 要标记为无效的代理地址。
+        """
         pass
 
 
 # 空代理实现
 class EmptyProxyProvider(ProxyProvider):
-    async def get_proxy(self) -> tuple[Optional[str], Optional[Exception]]:
+    async def get_proxy(self) -> Tuple[Optional[str], Optional[Exception]]:
+        """
+        获取空代理（不使用代理）。
+
+        Returns:
+            Tuple[None, None]: 返回(None, None)表示不使用代理。
+        """
         return None, None
 
     async def invalidate_proxy(self, proxy: str) -> None:
+        """
+        标记代理为无效（空实现）。
+
+        Args:
+            proxy (str): 要标记为无效的代理地址。
+        """
         # 无效化代理的逻辑块
         pass
 
@@ -45,10 +86,22 @@ class DebugProxyProvider(ProxyProvider):
             raise ValueError("ip_port must start with 'http://'")
         self.proxy = ip_port
 
-    async def get_proxy(self) -> tuple[Optional[str], Optional[Exception]]:
+    async def get_proxy(self) -> Tuple[Optional[str], Optional[Exception]]:
+        """
+        获取调试代理地址。
+
+        Returns:
+            Tuple[str, None]: 返回配置的调试代理地址和None。
+        """
         return self.proxy, None
 
     async def invalidate_proxy(self, proxy: str) -> None:
+        """
+        标记代理为无效（调试实现）。
+
+        Args:
+            proxy (str): 要标记为无效的代理地址。
+        """
         pass
 
 
@@ -126,7 +179,7 @@ class YiProxyProvider(ProxyProvider):
             # elapsed = time.time() - start_time
             # logger.info(f"获取代理耗时: {elapsed:.2f}秒")
             return f"http://{resp.text.strip()}", None
-        except Exception as e:
+        except (httpx.RequestError, httpx.HTTPStatusError, IOError, ValueError, TimeoutError) as e:
             return None, e
 
     async def invalidate_proxy(self, proxy: str) -> None:
