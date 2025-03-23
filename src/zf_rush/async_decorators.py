@@ -211,7 +211,7 @@ def http_client(
                 client.proxy_provider = (
                     proxy_provider if proxy_provider else EmptyProxyProvider()
                 )
-                await client.initialize()
+                await client._create_client()
                 return await func(*args, **kwargs)
 
             # 使用默认配置防止None
