@@ -1,8 +1,8 @@
 # 暴露公共 API
-from zf_rush.async_decorators import concurrent, delayed, http_client, scheduled
-from zf_rush.client import HttpClient
-from zf_rush.config import AppConfig, ConnectionConfig, RetryStrategy
-from zf_rush.proxy import (
+from .async_decorators import concurrent, delayed, http_client, scheduled
+from .client import HttpClient
+from .config import AppConfig, ConnectionConfig, RetryStrategy
+from .proxy import (
     DebugProxyProvider,
     EmptyProxyProvider,
     ProxyProvider,
