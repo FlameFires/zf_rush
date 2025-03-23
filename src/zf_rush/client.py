@@ -1,147 +1,133 @@
-from abc import ABC, abstractmethod
-from typing import Optional, Any, Union
+import asyncio
 import random
 import ssl
+from typing import Optional
 
+from fake_useragent import FakeUserAgent, UserAgent
 import httpx
 from loguru import logger
-from fake_useragent import UserAgent
 
-from .config import AppConfig
-from .proxy import ProxyPool
+from zf_rush.config import ConnectionConfig, RetryStrategy
+from zf_rush.proxy import EmptyProxyProvider, ProxyProvider
 
 
-class BaseApiClient(ABC):
-    """基础API客户端抽象基类，提供通用初始化逻辑
-
-    Args:
-        app_config (AppConfig): 应用配置对象，包含必要的配置参数
-        proxy_pool (Optional[ProxyPool], optional): 代理池对象，用于管理网络请求代理。默认为None
-        *args: 可变位置参数，供子类扩展使用
-        cookies (dict, str, optional): 会话Cookie信息，处理请求时会从此处提取。默认为None
-        **kwargs: 可变关键字参数，供子类扩展使用
-
-    说明:
-        1. 所有API客户端实现都应继承自该基类
-        2. proxy_pool为可选依赖，当需要使用代理时传入
-        3. cookies参数会被自动注入到请求会话中，用于维持用户认证状态
-        4. 其他args/kwargs参数可由子类自行定义和处理
+class HttpClient:
+    """
+    HTTP客户端类，用于发送请求和处理响应。
     """
 
     def __init__(
         self,
-        app_config: AppConfig,
-        proxy_pool: Optional[ProxyPool] = None,
-        *args,
-        **kwargs,
+        connection_config: Optional["ConnectionConfig"] = None,
+        retry_strategy: Optional["RetryStrategy"] = None,
+        proxy_provider: Optional["ProxyProvider"] = None,
+        fake_headers: bool = True,
     ):
-        # 应用配置
-        self.app_config = app_config
+        """
+        初始化方法。
 
-        # 代理配置
-        self.proxy: Optional[str] = None
+        Args:
+            connection_config (Optional["ConnectionConfig"], optional): 连接配置对象。默认为None，将使用默认连接配置。
+            retry_strategy (Optional["RetryStrategy"], optional): 重试策略对象。默认为None，将使用默认重试策略。
+            proxy_provider (Optional["ProxyProvider"], optional): 代理提供器对象。默认为None，将使用空代理提供器。
+            fake_headers (bool, optional): 是否使用伪造头部信息。默认为True。
 
-        # 请求客户端
-        self._ssl_context = self._create_ssl_context()
-        self._async_client: Optional[httpx.AsyncClient] = None
+        Attributes:
+            connection_config ("ConnectionConfig"): 连接配置对象。
+            retry_strategy ("RetryStrategy"): 重试策略对象。
+            proxy_provider ("ProxyProvider"): 代理提供器对象。
+            fake_headers (bool): 是否使用伪造头部信息。
+            ua ("UserAgent"): 用户代理对象。
+            current_proxy (Any): 当前使用的代理。
+            _client (Optional[httpx.AsyncClient]): HTTPX异步客户端对象。
+            _ssl_context (SSLContext): SSL上下文对象。
+        """
+        # 提供默认配置
+        # 设置连接配置对象
+        self.connection_config = connection_config or ConnectionConfig()
+        # 设置重试策略对象
+        self.retry_strategy: RetryStrategy = retry_strategy or RetryStrategy()
+        # 设置代理提供器对象
+        self.proxy_provider: ProxyProvider = proxy_provider or EmptyProxyProvider()
+        # 设置是否使用伪造头部信息
+        self.fake_headers: bool = fake_headers
 
-        # 代理池相关配置
-        self.current_proxy = None
-        self.proxy_pool = proxy_pool if proxy_pool else ProxyPool(app_config)
-        self.max_retries = app_config.max_retries
-        self.retry_status_codes = {429, 500, 502, 503, 504}
-        self.retry_exceptions = (
-            httpx.RequestError,
-            httpx.ProxyError,
-            httpx.ConnectTimeout,
-            ConnectionResetError,
-        )
+        # 初始化用户代理对象
+        self.ua: FakeUserAgent = UserAgent()
+        # 初始化当前使用的代理为空
+        self.current_proxy: tuple[Optional[str], Optional[Exception]] = None
+        # 初始化HTTPX异步客户端对象为None
+        self._client: Optional[httpx.AsyncClient] = None
+        # 初始化SSL上下文对象
+        self._ssl_context: ssl.SSLContext = self._create_ssl_context()
 
-        # 模拟UA
-        self.fake_headers_enabled = getattr(app_config, "fake_headers_enabled", True)
-        self.ua = UserAgent()
-
-        # 日志消息
-        self.execute_message = ""
-
-        # 其他数据
-        self.args = args
-        self.kwargs = kwargs
-
-    async def __aenter__(self):
-        self._async_client = await self._create_http_client()
+    async def __aenter__(self) -> "HttpClient":
+        self._client = await self._create_client()
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        if self.proxy_pool:
-            await self.proxy_pool.close()
-        if self._async_client:
-            await self._async_client.aclose()
+        if self._client:
+            await self._client.aclose()
 
-    def _create_ssl_context(self):
-        ctx = ssl.create_default_context()
-        ctx.set_ciphers("ALL")
-        return ctx
+    def _create_ssl_context(self) -> ssl.SSLContext:
+        # 确保配置存在
+        # 如果SSL验证被禁用
+        if not self.connection_config.ssl_verify:
+            # 创建一个默认的SSL上下文，不验证CA证书
+            return ssl.create_default_context(ssl.Purpose.SERVER_AUTH, cafile=False)
+        # 如果SSL验证被启用
+        return httpx.create_ssl_context()
 
-    def process_cookies(self, cookies: Union[str, dict]) -> dict:
-        default_cookies = {}
-        if isinstance(cookies, str):
-            # 解析字符串并合并到默认值
-            cookie_dict = {}
-            for pair in cookies.split(";"):
-                key, value = pair.strip().split("=", 1)
-                cookie_dict[key] = value
-            default_cookies.update(cookie_dict)
-            return default_cookies
-        elif isinstance(cookies, dict):
-            # 合并字典到默认值
-            default_cookies.update(cookies)
-            return default_cookies
-        return default_cookies
+    async def _create_client(self) -> httpx.AsyncClient:
+        """
+        异步创建 httpx 异步客户端。
 
-    async def _create_http_client(self) -> httpx.AsyncClient:
-        """创建并配置异步HTTP客户端
-
-        处理逻辑:
-            1. 从代理池获取可用代理（如果已配置）
-            2. 从kwargs中提取并预处理cookies
-            3. 创建带配置的HTTP客户端实例
+        Args:
+            无
 
         Returns:
-            httpx.AsyncClient: 配置好的异步HTTP客户端
+            httpx.AsyncClient: 创建的 httpx 异步客户端实例。
+
         """
+        # 获取代理服务器
+        if self.proxy_provider:
+            proxy_str, proxy_error = await self.proxy_provider.get_proxy()
+            self.current_proxy = (proxy_str, proxy_error)
+            if proxy_error:
+                logger.warning(f"获取代理时发生错误: {proxy_error}")
+                proxy = None
+            else:
+                proxy = proxy_str
+        else:
+            self.current_proxy = (None, None)
+            proxy = None
 
-        if self.proxy_pool:
-            proxy = await self.proxy_pool.get_next_proxy()
-            if proxy:
-                self.current_proxy = proxy
-
-        # 处理 cookies
-        cookies = self.kwargs.get("cookies")
-        processed_cookies = self.process_cookies(cookies) if cookies else None
-
-        return httpx.AsyncClient(
-            cookies=processed_cookies,
-            timeout=self.app_config.request_timeout,
-            http2=True,
+        # 创建httpx异步客户端
+        self._client = httpx.AsyncClient(
+            # 设置超时时间
+            timeout=self.connection_config.timeout,
+            # 是否启用HTTP/2
+            http2=self.connection_config.http2,
+            # SSL上下文，用于HTTPS连接
             verify=self._ssl_context,
-            proxy=self.current_proxy,
+            # 代理服务器
+            proxy=proxy,
         )
 
-    def _generate_fake_headers(self) -> dict:
-        if not self.fake_headers_enabled:
-            return {}
-        return {
-            "X-Forwarded-For": self._random_ip(),
-            "X-Real-IP": self._random_ip(),
-            "User-Agent": self.ua.random,
-            "Accept-Language": random.choice(["zh-CN,zh;q=0.9", "en-US,en;q=0.5"]),
-            "Cache-Control": "no-cache",
-            "Pragma": "no-cache",
-            # 可扩展其他安全头
-        }
+        # 返回创建的客户端
+        return self._client
 
     def _random_ip(self) -> str:
+        """
+        生成更真实的公网IPv4地址。
+
+        Args:
+            无
+
+        Returns:
+            str: 一个随机的公网IPv4地址。
+
+        """
         """生成更真实的公网IPv4地址"""
         while True:
             # 生成第一个八位组（1-254）
@@ -170,46 +156,107 @@ class BaseApiClient(ABC):
             if octet1 == 169 and octet2 == 254:
                 continue
 
+            # 拼接生成的IPv4地址并返回
             return f"{octet1}.{octet2}.{octet3}.{octet4}"
 
-    async def _refresh_client(self):
-        if self._async_client:
-            await self._async_client.aclose()
-        self._async_client = await self._create_http_client()
+    def _generate_fake_headers(self) -> dict:
+        """
+        生成伪造的HTTP请求头。
 
-    async def _get_http_client(self) -> httpx.AsyncClient:
-        if not self._async_client:
-            self._async_client = await self._create_http_client()
-        return self._async_client
+        Args:
+            无
 
-    async def _request_with_retry(self, method: str, url: str, **kwargs) -> Any:
-        # 在请求前添加伪装头
-        headers = kwargs.get("headers", {}).copy()
-        headers.update(self._generate_fake_headers())
+        Returns:
+            dict: 伪造的HTTP请求头，包含"X-Forwarded-For", "X-Real-IP"和"User-Agent"字段。
+                如果没有配置伪造请求头，则返回空字典。
+
+        """
+        # 判断是否配置伪造请求头
+        if not self.fake_headers:
+            # 如果没有配置伪造请求头，返回空字典
+            return {}
+        return {
+            # 伪造X-Forwarded-For头
+            "X-Forwarded-For": self._random_ip(),
+            # 伪造X-Real-IP头
+            "X-Real-IP": self._random_ip(),
+            # 伪造User-Agent头
+            "User-Agent": self.ua.random,
+            # 可扩展其他安全头
+        }
+
+    async def request(self, method: str, url: str, **kwargs) -> httpx.Response:
+        """
+        增强型异步请求方法，包含自动重试和代理管理功能
+
+        Args:
+            method (str): HTTP方法（GET/POST/PUT/DELETE等）
+            url (str): 请求的目标URL地址
+            **kwargs: 传递给httpx.AsyncClient.request的其他参数
+
+        Returns:
+            httpx.Response: 成功响应对象
+
+        Raises:
+            httpx.HTTPStatusError: 当达到最大重试次数后仍返回错误状态码
+            httpx.RequestError: 当发生无法恢复的请求错误
+
+        功能特性：
+        1. 自动重试机制（基于配置的重试策略）
+        2. 智能代理轮换（当配置代理提供者时）
+        3. 伪造请求头注入
+        4. 指数退避算法优化重试间隔
+        5. 自动重建失效的HTTP会话
+
+        使用示例：
+        response = await client.request(
+            "GET",
+            "https://api.example.com/data",
+            params={"page": 1},
+            timeout=30.0
+        )
+        """
+        headers = {**kwargs.get("headers", {}), **self._generate_fake_headers()}
         kwargs["headers"] = headers
 
-        retries = 0
-        while retries <= self.max_retries:
+        for attempt in range(self.retry_strategy.max_retries + 1):
             try:
-                client = await self._get_http_client()
-                response = await client.request(method, url, **kwargs)
-                if response.status_code in self.retry_status_codes:
-                    raise httpx.HTTPStatusError(
-                        f"请求失败，HTTP 状态码为 {response.status_code}，该状态码属于需要重试的范围。",
-                        response=response,
-                        request=response.request,
-                    )
+                # start_time = time.time()
+                response = await self._client.request(method, url, **kwargs)
+                # elapsed = time.time() - start_time
+                # logger.info(f"{response.url} 请求耗时: {elapsed:.2f}s")
+                response.raise_for_status()
                 return response
-            except self.retry_exceptions as e:
-                logger.warning(f"请求失败: {e}, 重试次数: {retries}/{self.max_retries}")
-                await self.proxy_pool.get_next_proxy()
-                await self._refresh_client()
-                retries += 1
-                if retries > self.max_retries:
-                    logger.error("达到最大重试次数")
-                    raise
+            except (httpx.RequestError, httpx.HTTPStatusError) as e:
+                if attempt < self.retry_strategy.max_retries:
+                    await self._handle_retry(exception=e, attempt=attempt)
+                    continue
+                raise e
 
-    @abstractmethod
-    async def perform_action(self, action: str, *args, **kwargs) -> Any:
-        """统一操作入口，处理不同业务逻辑"""
-        pass
+    async def _handle_retry(self, exception: Exception, attempt: int):
+        """重试处理逻辑
+
+        Args：
+            exception: 捕获的异常对象
+            attempt: 当前重试次数（从0开始计数）
+
+        处理流程：
+        1. 代理失效处理
+        2. 计算退避时间
+        3. 重建HTTP客户端
+        """
+        # 如果代理提供器存在且捕获的异常是代理错误
+        if self.proxy_provider and isinstance(exception, httpx.ProxyError):
+            # 如果客户端的代理已设置，则进行代理失效处理
+            if self._client.proxy:  # 防止proxy未设置的情况
+                await self.proxy_provider.invalidate_proxy(self._client.proxy)
+
+        # 指数退避策略
+        backoff_time = self.retry_strategy.backoff_factor * (2**attempt)
+        logger.debug(f"等待 {backoff_time:.2f}s 后重试（第{attempt + 1}次重试）")
+        await asyncio.sleep(backoff_time)
+
+        # 关闭当前客户端
+        await self._client.aclose()
+        # 重建客户端
+        self._client = await self._create_client()

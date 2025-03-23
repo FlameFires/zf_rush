@@ -1,198 +1,213 @@
 # zf_rush - 高性能异步 API 客户端框架
 
-## 核心特性
+[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/FlameFires/zf_rush/)
+[![Python](https://img.shields.io/badge/python-3.12%2B-blue)](https://www.python.org/)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-- ✨ **全异步架构**：基于 asyncio 和 httpx 实现高并发请求
-- 🔄 **智能重试**：支持配置化重试策略（最大重试次数、延迟策略）
-- 🌐 **代理池系统**：动态代理管理，支持多平台代理自动切换
-- 🔒 **安全增强**：内置签名验证系统，支持自定义加密策略
-- 📦 **模块化设计**：可插拔组件架构，轻松扩展功能模块
+一个专注于高性能、易扩展的异步 API 客户端和任务调度框架。
 
-## 快速开始
+## 特性
+
+- ✨ **全异步架构**：基于 Python 3.12+ 的现代异步特性
+- 🚀 **装饰器驱动**：通过装饰器优雅地实现并发控制、重试策略、延迟执行等功能
+- 🌐 **智能代理**：内置多种代理提供方式，支持动态切换和失效处理
+- 📝 **日志系统**：集成 loguru，提供美观的控制台输出和文件日志
+- 🔄 **任务调度**：支持定时执行和并发控制
+- 🛡️ **异常处理**：完善的错误处理和重试机制
+
+## 安装
+
+要求 Python 3.12 或更高版本。
 
 ```bash
 pip install zf_rush
-```
-
-或者使用 uv
-
-```bash
+# 或使用 uv（推荐）
 uv add zf_rush
 ```
 
-## 基础用法
+## 快速开始
+
+### 基础示例
 
 ```python
 import asyncio
-from zf_rush import AppConfig, CacheData, BaseScheduler, BaseApiClient
+from loguru import logger
+from zf_rush.async_decorators import concurrent, http_client
+from zf_rush.client import HttpClient
+from zf_rush.config import ConnectionConfig, RetryStrategy
+from zf_rush.proxy import DebugProxyProvider
 
-# 配置初始化
-config = AppConfig(
-    concurrency=10,           # 初始并发数
-    max_requests=1000,        # 最大请求总量
-    request_delay=0.3,        # 请求间隔（秒）
-    max_concurrent_requests=0 # 0表示不限制并发（根据系统资源自动调整）
+# 配置连接和重试策略
+connection_config = ConnectionConfig(timeout=15.0, http2=True)
+retry_strategy = RetryStrategy(max_retries=5)
+proxy_provider = DebugProxyProvider("http://your-proxy:port/")
+
+@concurrent(max_concurrent=2, max_requests=8)  # 控制并发和请求数
+@http_client(
+    connection_config=connection_config,
+    retry_strategy=retry_strategy,
+    proxy_provider=proxy_provider,
+)
+async def api_call(client: HttpClient, task_id: int, request_num: int):
+    response = await client.request("GET", "https://api.example.com/")
+    logger.info(f"TaskId-{task_id:02d} | Request-{request_num + 1:03d} | Response: {response.text[:50]}")
+
+# 运行任务
+async def main():
+    await api_call()
+
+if __name__ == "__main__":
+    if sys.platform == "win32":
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    asyncio.run(main())
+```
+
+### 日志配置
+
+```python
+from loguru import logger
+import sys
+
+# 配置控制台日志
+logger.remove()  # 移除默认处理器
+logger.add(
+    sys.stdout,
+    level="INFO",
+    format="<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | "
+    "<level>{level: <4.4}</level> | "
+    "<level>{message}</level>",
+    enqueue=True,
+    colorize=False,
 )
 
-# 禁用缓存系统
-cache = CacheData(enabled=False)
-
-# 创建调度器
-class MyScheduler(BaseScheduler):
-    async def worker(self, task_id: int):
-        # 实现具体任务逻辑
-        pass
-
-# 启动任务
-scheduler = MyScheduler(app_config=config, cache_data=cache)
-asyncio.run(scheduler.start())
+# 配置文件日志
+logger.add(
+    "logs/app_{time:YYYY-MM-DD}.log",
+    format="<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | "
+    "<level>{level: <4.4}</level> | "
+    "<level>{message}</level>",
+    rotation="00:00",  # 每天轮换
+    compression="zip",  # 压缩旧日志
+    level="INFO",
+    enqueue=True,
+    backtrace=True,
+    diagnose=True,
+)
 ```
 
-## 高级用法
-
-### 扩展配置
+### 高级用法：多重装饰器组合
 
 ```python
-from zf_rush import AppConfig, ProxyPlatformConfig, ProxyConfig, BaseScheduler
+from zf_rush.async_decorators import concurrent, scheduled, delayed
+from datetime import datetime
 
-class Scheduler(BaseScheduler):
-    def __init__(
-            self,
-            app_config: AppConfig,
-            cache_data: CacheData,
-    ):
-        super().__init__(app_config)
-        self.cache_data = cache_data
-        self.logger = logger
+# 组合多个装饰器实现复杂功能
+@scheduled(execute_time="2025-03-22 18:50:00")  # 定时执行
+@concurrent(max_concurrent=2, max_requests=10)   # 并发控制
+@delayed(delay=0.5)                             # 请求延迟
+async def complex_task(task_id: int, request_num: int):
+    # 任务实现
+    pass
 
-    async def worker(
-            self,
-            task_id: int,
-    ):
-        """工作协程"""
-        # 创建独立客户端
-        async with RushClient(self.app_config, self.cache_data) as client:
-            await self.execute_operation(task_id, client)
-            while True:
-                result = await self.execute_operation(task_id, client)
-                if not result:
-                    break
+# 使用配置对象创建装饰器
+from zf_rush.config import AppConfig
 
-    async def perform_action(self, client: "RushClient") -> Any:
-        # 自定义操作逻辑
-        return await client.perform_action("order_list")
+config = AppConfig(
+    execute_time="2024-01-01 12:00:00",
+    concurrency=5,
+    max_requests=20,
+    request_delay=0.5,
+    retry_attempts=3,
+)
 
-    def format_result(self, result: Any) -> str:
-        # 自定义结果格式化
-        return super().format_result(result)
+def create_scheduler(config: AppConfig):
+    def decorator(func):
+        @scheduled(config.execute_time)
+        @concurrent(config.concurrency, config.max_requests)
+        @delayed(config.request_delay)
+        async def wrapper(*args, **kwargs):
+            return await func(*args, **kwargs)
+        return wrapper
+    return decorator
 
-    def construct_success_log(
-            self, task_id: int, current_request: int, elapsed: float, result: Any
-    ) -> str:
-        log_msg = super().construct_success_log(
-            task_id=task_id,
-            current_request=current_request,
-            elapsed=elapsed,
-            result=result,
-        )
-        return f"✅ {log_msg}"
-
-    def construct_failure_log(
-            self, task_id: int, current_request: int, elapsed: float, error: str
-    ) -> str:
-        log_msg = super().construct_failure_log(
-            task_id=task_id,
-            current_request=current_request,
-            elapsed=elapsed,
-            error=error,
-        )
-        return f"❌ {log_msg}"
+@create_scheduler(config)
+async def configured_task(task_id: int, request_num: int):
+    # 任务实现
+    pass
 ```
 
-### 自定义客户端
+### 代理配置示例
 
 ```python
-from zf_rush import BaseApiClient
+from zf_rush.proxy import DebugProxyProvider, RotatingProxyProvider, YiProxyProvider
 
-class MyApiClient(BaseApiClient):
-    async def custom_request(self, method: str, url: str, **kwargs):
-        # 添加自定义请求逻辑
-        return await self._request(method, url, **kwargs)
+# 调试代理
+debug_proxy = DebugProxyProvider("http://debug-proxy:8080/")
 
-    async def _process_response(self, response):
-        # 自定义响应处理
-        return await super()._process_response(response)
+# 轮转代理
+rotating_proxy = RotatingProxyProvider([
+    "http://proxy1:8080",
+    "http://proxy2:8080"
+])
+
+# 易代理
+yi_proxy = YiProxyProvider(
+    "http://api.ydaili.cn/api?key=your_key"
+)
 ```
 
-## 架构说明
+## 核心组件
 
-### 核心组件
+### 装饰器
 
-1. 代理池系统
+- `@concurrent`: 控制并发数和最大请求数
+- `@http_client`: 配置 HTTP 客户端（代理、重试、超时等）
+- `@scheduled`: 定时执行任务
+- `@delayed`: 添加请求延迟
 
-- 动态代理管理队列
-- 多平台代理自动切换
-- 失效代理自动移除机制
-- 智能冷却时间控制
+### 配置类
 
-2. 调度系统
+- `ConnectionConfig`: HTTP 连接配置
+- `RetryStrategy`: 重试策略配置
+- `AppConfig`: 应用全局配置
 
-- 精确的并发控制（支持无限制模式）
-- 任务执行时间预设（execute_datetime）
-- 请求频率自动调节
+### 代理提供者
 
-3. 安全机制
+- `DebugProxyProvider`: 用于调试的固定代理
+- `RotatingProxyProvider`: 轮转多个代理
+- `YiProxyProvider`: 易代理平台集成
+- `ProxyProvider`: 自定义代理提供者的基类
 
-- 可配置的请求签名系统
-- 自动 User-Agent 生成
-- 请求指纹识别防护
+## 项目依赖
 
-4. 扩展能力
+- Python >= 3.12
+- httpx[http2] >= 0.28.1
+- fake-useragent >= 2.1.0
+- loguru >= 0.7.3
 
-- 可自定义代理平台接入
-- 支持中间件扩展
-- 钩子函数系统（请求前后处理）
+## 最佳实践
 
-### 性能优化建议
+1. **错误处理**
+   - 使用 try-except 捕获具体异常
+   - 实现合理的重试策略
+   - 记录详细的错误日志
 
-- 设置合理的 request_delay（0.1-0.5 秒最佳实践）
-- 根据目标服务器性能调整 max_concurrent_requests
-- 生产环境建议启用代理池（配置多个备用代理）
-- 使用 fake_headers_enabled 伪装请求头特征
+2. **性能优化**
+   - 合理设置并发数和请求延迟
+   - 使用 HTTP/2 提升性能
+   - 启用代理池分散请求压力
 
-## 贡献指南
+3. **日志管理**
+   - 配置合适的日志级别
+   - 启用日志轮换和压缩
+   - 记录关键性能指标
 
-我们欢迎任何形式的贡献！以下是主要开发方向：
+## 许可证
 
-1. **代理模块** ：
+本项目采用 MIT 许可证。详见 [LICENSE](LICENSE) 文件。
 
-- 实现新的代理平台适配器
-- 优化代理有效性检测算法
-- 开发代理性能评分系统
+## 链接
 
-2. **核心功能** ：
-
-- 增加请求指纹混淆功能
-- 实现动态速率限制算法
-- 开发自动重试策略插件
-
-3. **工具增强** ：
-
-- 添加 Prometheus 监控指标
-- 实现请求链路追踪
-- 开发可视化调试面板
-- 欢迎提交 PR 和 Issue
-
-## 需要帮助完善文档？想实现某个新特性？欢迎提交 Issue 或 PR！
-
-主要改进点说明：
-
-1. 强化了代理配置的示例和说明
-2. 新增架构说明部分，明确系统设计
-3. 增加性能优化建议章节
-4. 更新示例代码以匹配最新的配置参数
-5. 补充安全机制说明
-6. 增加可扩展性相关的开发指南
-7. 突出异步特性和并发控制机制
-8. 明确代理池的工作机制和配置方式
-9. 添加实际应用场景的最佳实践建议
+- [项目主页](https://github.com/FlameFires/zf_rush/)
+- [问题反馈](https://github.com/FlameFires/zf_rush/issues)
+- [更新日志](https://github.com/FlameFires/zf_rush/releases)
